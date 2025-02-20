@@ -69,11 +69,16 @@ public sealed class ProducesResponseTypeMetadata : IProducesResponseTypeMetadata
     public int StatusCode { get; private set; }
 
     /// <summary>
+    /// Gets or sets the description of the response.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
     /// Gets or sets the content types associated with the response.
     /// </summary>
     public IEnumerable<string> ContentTypes { get; private set; }
 
-    /// <inheritdoc/>>
+    /// <inheritdoc/>
     public override string ToString()
     {
         return DebuggerHelpers.GetDebugText(nameof(StatusCode), StatusCode, nameof(ContentTypes), ContentTypes, nameof(Type), Type, includeNullValues: false, prefix: "Produces");

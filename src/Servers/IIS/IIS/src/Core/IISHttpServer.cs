@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -27,7 +28,7 @@ internal sealed class IISHttpServer : IServer
     private readonly IISServerOptions _options;
     private readonly IISNativeApplication _nativeApplication;
     private readonly ServerAddressesFeature _serverAddressesFeature;
-    private readonly string? _virtualPath;
+    private string? _virtualPath;
 
     private readonly TaskCompletionSource _shutdownSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool? _websocketAvailable;
@@ -58,6 +59,7 @@ internal sealed class IISHttpServer : IServer
         IISNativeApplication nativeApplication,
         IHostApplicationLifetime applicationLifetime,
         IAuthenticationSchemeProvider authentication,
+        IConfiguration configuration,
         IOptions<IISServerOptions> options,
         ILogger<IISHttpServer> logger
         )
@@ -67,8 +69,6 @@ internal sealed class IISHttpServer : IServer
         _logger = logger;
         _options = options.Value;
         _serverAddressesFeature = new ServerAddressesFeature();
-        var iisConfigData = NativeMethods.HttpGetApplicationProperties();
-        _virtualPath = iisConfigData.pwzVirtualApplicationPath;
 
         if (_options.ForwardWindowsAuthentication)
         {
@@ -76,6 +76,11 @@ internal sealed class IISHttpServer : IServer
         }
 
         Features.Set<IServerAddressesFeature>(_serverAddressesFeature);
+
+        if (IISEnvironmentFeature.TryCreate(configuration, out var iisEnvFeature))
+        {
+            Features.Set<IIISEnvironmentFeature>(iisEnvFeature);
+        }
 
         if (_options.MaxRequestBodySize > _options.IisMaxRequestSizeLimit)
         {
@@ -98,6 +103,9 @@ internal sealed class IISHttpServer : IServer
             &OnRequestsDrained,
             (IntPtr)_httpServerHandle,
             (IntPtr)_httpServerHandle);
+
+        var iisConfigData = NativeMethods.HttpGetApplicationProperties();
+        _virtualPath = iisConfigData.pwzVirtualApplicationPath;
 
         _serverAddressesFeature.Addresses = _options.ServerAddresses;
 
@@ -125,7 +133,7 @@ internal sealed class IISHttpServer : IServer
         _disposed = true;
 
         // Block any more calls into managed from native as we are unloading.
-        _nativeApplication.StopCallsIntoManaged();
+        _nativeApplication.Stop();
         _shutdownSignal.TrySetResult();
 
         if (_httpServerHandle.IsAllocated)
@@ -134,7 +142,6 @@ internal sealed class IISHttpServer : IServer
         }
 
         _memoryPool.Dispose();
-        _nativeApplication.Dispose();
     }
 
     [UnmanagedCallersOnly]
@@ -254,7 +261,7 @@ internal sealed class IISHttpServer : IServer
                 return;
             }
 
-            server._nativeApplication.StopCallsIntoManaged();
+            server._nativeApplication.Stop();
             server._shutdownSignal.TrySetResult();
             server._cancellationTokenRegistration.Dispose();
         }

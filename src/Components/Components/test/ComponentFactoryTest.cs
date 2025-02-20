@@ -15,8 +15,9 @@ public class ComponentFactoryTest
     {
         // Arrange
         var componentType = typeof(EmptyComponent);
-        var factory = new ComponentFactory(new DefaultComponentActivator(), new TestRenderer());
-
+        var serviceProvider = GetServiceProvider();
+        var factory = new ComponentFactory(new DefaultComponentActivator(serviceProvider), new TestRenderer());
+        
         // Act
         var instance = factory.InstantiateComponent(GetServiceProvider(), componentType, null, null);
 
@@ -30,8 +31,9 @@ public class ComponentFactoryTest
     {
         // Arrange
         var componentType = typeof(List<string>);
-        var factory = new ComponentFactory(new DefaultComponentActivator(), new TestRenderer());
-
+        var serviceProvider = GetServiceProvider();
+        var factory = new ComponentFactory(new DefaultComponentActivator(serviceProvider), new TestRenderer());
+        
         // Assert
         var ex = Assert.Throws<ArgumentException>(() => factory.InstantiateComponent(GetServiceProvider(), componentType, null, null));
         Assert.StartsWith($"The type {componentType.FullName} does not implement {nameof(IComponent)}.", ex.Message);
@@ -86,6 +88,7 @@ public class ComponentFactoryTest
         Assert.NotNull(component.Property1);
         Assert.NotNull(component.GetProperty2());
         Assert.NotNull(component.Property3);
+        Assert.NotNull(component.KeyedProperty);
 
         // Property on derived type without [Inject] should not be assigned
         Assert.Null(component.Property4);
@@ -98,10 +101,11 @@ public class ComponentFactoryTest
     {
         // Arrange
         var componentType = typeof(ComponentWithNonInjectableProperties);
-        var factory = new ComponentFactory(new DefaultComponentActivator(), new TestRenderer());
+        var serviceProvider = GetServiceProvider();
+        var factory = new ComponentFactory(new DefaultComponentActivator(serviceProvider), new TestRenderer());
 
         // Act
-        var instance = factory.InstantiateComponent(GetServiceProvider(), componentType, null, null);
+        var instance = factory.InstantiateComponent(serviceProvider, componentType, null, null);
 
         // Assert
         Assert.NotNull(instance);
@@ -118,10 +122,11 @@ public class ComponentFactoryTest
         var componentType = typeof(ComponentWithInjectProperties);
         var renderer = new RendererWithResolveComponentForRenderMode(
             /* won't be used */ new ComponentWithRenderMode());
-        var factory = new ComponentFactory(new DefaultComponentActivator(), renderer);
+        var serviceProvider = GetServiceProvider();
+        var factory = new ComponentFactory(new DefaultComponentActivator(serviceProvider), renderer);
 
         // Act
-        var instance = factory.InstantiateComponent(GetServiceProvider(), componentType, null, null);
+        var instance = factory.InstantiateComponent(serviceProvider, componentType, null, null);
 
         // Assert
         Assert.IsType<ComponentWithInjectProperties>(instance);
@@ -135,11 +140,12 @@ public class ComponentFactoryTest
         var resolvedComponent = new ComponentWithInjectProperties();
         var componentType = typeof(ComponentWithRenderMode);
         var renderer = new RendererWithResolveComponentForRenderMode(resolvedComponent);
-        var componentActivator = new DefaultComponentActivator();
+        var serviceProvider = GetServiceProvider();
+        var componentActivator = new DefaultComponentActivator(serviceProvider);
         var factory = new ComponentFactory(componentActivator, renderer);
 
         // Act
-        var instance = (ComponentWithInjectProperties)factory.InstantiateComponent(GetServiceProvider(), componentType, null, 1234);
+        var instance = (ComponentWithInjectProperties)factory.InstantiateComponent(serviceProvider, componentType, null, 1234);
 
         // Assert
         Assert.True(renderer.ResolverWasCalled);
@@ -152,6 +158,30 @@ public class ComponentFactoryTest
     }
 
     [Fact]
+    public void InstantiateComponent_WithDerivedRenderModeOnDerivedComponent_CausesAmbiguousMatchException()
+    {
+        // We could allow derived components to override the rendermode, but:
+        // [1] It's unclear how that would be legitimate. If the base specifies a rendermode, it's saying
+        //     it only works in that mode. It wouldn't be safe for a derived type to change that.
+        // [2] If we did want to implement this, we'd need to implement our own inheritance chain walking
+        //     to make sure we find the rendermode from the *closest* ancestor type. GetCustomAttributes
+        //     on its own isn't documented to return the results in any specific order.
+        // Since issue [1] makes it unclear we'd want to support this, for now we don't.
+
+        // Arrange
+        var resolvedComponent = new ComponentWithInjectProperties();
+        var componentType = typeof(DerivedComponentWithRenderMode);
+        var renderer = new RendererWithResolveComponentForRenderMode(resolvedComponent);
+        var serviceProvider = GetServiceProvider();
+        var componentActivator = new DefaultComponentActivator(serviceProvider);
+        var factory = new ComponentFactory(componentActivator, renderer);
+
+        // Act/Assert
+        Assert.Throws<AmbiguousMatchException>(
+            () => factory.InstantiateComponent(serviceProvider, componentType, null, 1234));
+    }
+
+    [Fact]
     public void InstantiateComponent_WithRenderModeOnCallSite_UsesRenderModeResolver()
     {
         // Arrange
@@ -161,11 +191,12 @@ public class ComponentFactoryTest
         var componentType = typeof(ComponentWithNonInjectableProperties);
         var callSiteRenderMode = new TestRenderMode();
         var renderer = new RendererWithResolveComponentForRenderMode(resolvedComponent);
-        var componentActivator = new DefaultComponentActivator();
+        var serviceProvider = GetServiceProvider();
+        var componentActivator = new DefaultComponentActivator(serviceProvider);
         var factory = new ComponentFactory(componentActivator, renderer);
 
         // Act
-        var instance = (ComponentWithInjectProperties)factory.InstantiateComponent(GetServiceProvider(), componentType, callSiteRenderMode, 1234);
+        var instance = (ComponentWithInjectProperties)factory.InstantiateComponent(serviceProvider, componentType, callSiteRenderMode, 1234);
 
         // Assert
         Assert.Same(resolvedComponent, instance);
@@ -183,7 +214,8 @@ public class ComponentFactoryTest
         var resolvedComponent = new ComponentWithInjectProperties();
         var componentType = typeof(ComponentWithRenderMode);
         var renderer = new RendererWithResolveComponentForRenderMode(resolvedComponent);
-        var componentActivator = new DefaultComponentActivator();
+        var serviceProvider = GetServiceProvider();
+        var componentActivator = new DefaultComponentActivator(serviceProvider);
         var factory = new ComponentFactory(componentActivator, renderer);
 
         // Even though the two rendermodes are literally the same object, we don't allow specifying any nonnull
@@ -196,11 +228,36 @@ public class ComponentFactoryTest
         Assert.Equal($"The component type '{componentType}' has a fixed rendermode of '{typeof(TestRenderMode)}', so it is not valid to specify any rendermode when using this component.", ex.Message);
     }
 
+    [Fact]
+    public void InstantiateComponent_CreatesInstance_WithTypeActivation()
+    {
+        // Arrange
+        var serviceProvider = GetServiceProvider();
+        var componentType = typeof(ComponentWithConstructorInjection);
+        var resolvedComponent = new ComponentWithInjectProperties();
+        var renderer = new RendererWithResolveComponentForRenderMode(resolvedComponent);
+        var defaultComponentActivator = new DefaultComponentActivator(serviceProvider);
+        var factory = new ComponentFactory(defaultComponentActivator, renderer);
+
+        // Act
+        var instance = factory.InstantiateComponent(serviceProvider, componentType, null, null);
+
+        // Assert
+        Assert.NotNull(instance);
+        var component = Assert.IsType<ComponentWithConstructorInjection>(instance);
+        Assert.NotNull(component.Property1);
+        Assert.NotNull(component.Property2);
+        Assert.NotNull(component.Property3); // Property injection should still work.
+    }
+
+    private const string KeyedServiceKey = "my-keyed-service";
+
     private static IServiceProvider GetServiceProvider()
     {
         return new ServiceCollection()
             .AddTransient<TestService1>()
             .AddTransient<TestService2>()
+            .AddKeyedTransient<TestService3>(KeyedServiceKey)
             .BuildServiceProvider();
     }
 
@@ -230,6 +287,9 @@ public class ComponentFactoryTest
 
         [Inject]
         public TestService1 Property4 { get; set; }
+
+        [Inject(Key = KeyedServiceKey)]
+        public TestService3 KeyedProperty { get; set; }
 
         public TestService2 GetProperty2() => Property2;
 
@@ -262,6 +322,31 @@ public class ComponentFactoryTest
         }
     }
 
+    public class ComponentWithConstructorInjection : IComponent
+    {
+        public ComponentWithConstructorInjection(TestService1 property1, TestService2 property2)
+        {
+            Property1 = property1;
+            Property2 = property2;
+        }
+
+        public TestService1 Property1 { get; }
+        public TestService2 Property2 { get; }
+
+        [Inject]
+        public TestService2 Property3 { get; set; }
+
+        public void Attach(RenderHandle renderHandle)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task SetParametersAsync(ParameterView parameters)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     private class DerivedComponent : ComponentWithInjectProperties
     {
         public new TestService2 Property4 { get; set; }
@@ -272,6 +357,7 @@ public class ComponentFactoryTest
 
     public class TestService1 { }
     public class TestService2 { }
+    public class TestService3 { }
 
     private class CustomComponentActivator<TResult> : IComponentActivator where TResult : IComponent, new()
     {
@@ -290,6 +376,16 @@ public class ComponentFactoryTest
     }
 
     private class TestRenderMode : IComponentRenderMode { }
+    private class DerivedComponentRenderMode : IComponentRenderMode { }
+
+    [DerivedComponentRenderMode]
+    private class DerivedComponentWithRenderMode : ComponentWithRenderMode
+    {
+        class DerivedComponentRenderModeAttribute : RenderModeAttribute
+        {
+            public override IComponentRenderMode Mode => new DerivedComponentRenderMode();
+        }
+    }
 
     [OwnRenderMode]
     private class ComponentWithRenderMode : IComponent

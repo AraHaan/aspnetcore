@@ -51,17 +51,16 @@ public class Program
             .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAdB2C"));
         #endif
         #endif
-        #if (UseMinimalAPIs)
+        #if (UsingMinimalAPIs)
         builder.Services.AddAuthorization();
         #endif
 
-        #if (UseControllers)
+        #if (UsingControllers)
         builder.Services.AddControllers();
         #endif
         #if (EnableOpenAPI)
-        // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-        builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
+        // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+        builder.Services.AddOpenApi();
         #endif
         #if (WindowsAuth)
 
@@ -81,8 +80,7 @@ public class Program
         #if (EnableOpenAPI)
         if (app.Environment.IsDevelopment())
         {
-            app.UseSwagger();
-            app.UseSwaggerUI();
+            app.MapOpenApi();
         }
         #endif
         #if (HasHttpsProfile)
@@ -92,7 +90,7 @@ public class Program
 
         app.UseAuthorization();
 
-        #if (UseMinimalAPIs)
+        #if (UsingMinimalAPIs)
         #if (OrganizationalAuth || IndividualB2CAuth)
         var scopeRequiredByApi = app.Configuration["AzureAd:Scopes"] ?? "";
         #endif
@@ -165,12 +163,10 @@ public class Program
         #if (EnableOpenAPI && !NoAuth)
         })
         .WithName("GetWeatherForecast")
-        .WithOpenApi()
         .RequireAuthorization();
         #elif (EnableOpenAPI && NoAuth)
         })
-        .WithName("GetWeatherForecast")
-        .WithOpenApi();
+        .WithName("GetWeatherForecast");
         #elif (!EnableOpenAPI && !NoAuth)
         })
         .RequireAuthorization();
@@ -178,7 +174,7 @@ public class Program
         });
         #endif
         #endif
-        #if (UseControllers)
+        #if (UsingControllers)
 
         app.MapControllers();
         #endif

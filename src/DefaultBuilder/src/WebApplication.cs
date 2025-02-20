@@ -142,6 +142,14 @@ public sealed class WebApplication : IHost, IApplicationBuilder, IEndpointRouteB
         new(options, slim: true);
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="WebApplicationBuilder"/> class with no defaults.
+    /// </summary>
+    /// <param name="options">The <see cref="WebApplicationOptions"/> to configure the <see cref="WebApplicationBuilder"/>.</param>
+    /// <returns>The <see cref="WebApplicationBuilder"/>.</returns>
+    public static WebApplicationBuilder CreateEmptyBuilder(WebApplicationOptions options) =>
+        new(options, slim: false, empty: true);
+
+    /// <summary>
     /// Start the application.
     /// </summary>
     /// <param name="cancellationToken"></param>
@@ -158,7 +166,7 @@ public sealed class WebApplication : IHost, IApplicationBuilder, IEndpointRouteB
     /// <param name="cancellationToken"></param>
     /// <returns>
     /// A <see cref="Task"/> that represents the shutdown of the <see cref="WebApplication"/>.
-    /// Successful completion indicates that all the HTTP server has stopped.
+    /// Successful completion indicates that the HTTP server has stopped.
     /// </returns>
     public Task StopAsync(CancellationToken cancellationToken = default) =>
         _host.StopAsync(cancellationToken);
@@ -177,7 +185,7 @@ public sealed class WebApplication : IHost, IApplicationBuilder, IEndpointRouteB
     }
 
     /// <summary>
-    /// Runs an application and block the calling thread until host shutdown.
+    /// Runs an application and blocks the calling thread until host shutdown.
     /// </summary>
     /// <param name="url">The URL to listen to if the server hasn't been configured directly.</param>
     public void Run([StringSyntax(StringSyntaxAttribute.Uri)] string? url = null)

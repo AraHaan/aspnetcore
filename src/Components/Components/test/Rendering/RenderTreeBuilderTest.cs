@@ -2110,7 +2110,7 @@ public class RenderTreeBuilderTest
         // Act
         builder.OpenComponent<TestComponent>(0);
         builder.AddComponentParameter(1, "param", 123);
-        builder.AddComponentRenderMode(2, renderMode);
+        builder.AddComponentRenderMode(renderMode);
         builder.CloseComponent();
 
         // Assert
@@ -2122,7 +2122,7 @@ public class RenderTreeBuilderTest
                 Assert.True(frame.ComponentFrameFlags.HasFlag(ComponentFrameFlags.HasCallerSpecifiedRenderMode));
             },
             frame => AssertFrame.Attribute(frame, "param", 123, 1),
-            frame => AssertFrame.ComponentRenderMode(frame, renderMode, 2));
+            frame => AssertFrame.ComponentRenderMode(frame, renderMode));
     }
 
     [Fact]
@@ -2135,24 +2135,32 @@ public class RenderTreeBuilderTest
         // Act/Assert
         var ex = Assert.Throws<InvalidOperationException>(() =>
         {
-            builder.AddComponentRenderMode(1, new TestRenderMode());
+            builder.AddComponentRenderMode(new TestRenderMode());
         });
         Assert.Equal($"The enclosing frame is not of the required type '{nameof(RenderTreeFrameType.Component)}'.", ex.Message);
     }
 
     [Fact]
-    public void CannotAddNullComponentRenderMode()
+    public void CanAddNullComponentRenderMode()
     {
         // Arrange
         var builder = new RenderTreeBuilder();
-        builder.OpenComponent<TestComponent>(0);
 
-        // Act/Assert
-        var ex = Assert.Throws<ArgumentNullException>(() =>
-        {
-            builder.AddComponentRenderMode(1, null);
-        });
-        Assert.Equal("renderMode", ex.ParamName);
+        // Act
+        builder.OpenComponent<TestComponent>(0);
+        builder.AddComponentParameter(1, "param", 123);
+        builder.AddComponentRenderMode(null);
+        builder.CloseComponent();
+
+        // Assert
+        Assert.Collection(
+            builder.GetFrames().AsEnumerable(),
+            frame =>
+            {
+                AssertFrame.Component<TestComponent>(frame, 2, 0);
+                Assert.False(frame.ComponentFrameFlags.HasFlag(ComponentFrameFlags.HasCallerSpecifiedRenderMode));
+            },
+            frame => AssertFrame.Attribute(frame, "param", 123, 1));
     }
 
     [Fact]
@@ -2161,7 +2169,7 @@ public class RenderTreeBuilderTest
         // Arrange
         var builder = new RenderTreeBuilder();
         builder.OpenComponent<TestComponent>(0);
-        builder.AddComponentRenderMode(1, new TestRenderMode());
+        builder.AddComponentRenderMode(new TestRenderMode());
 
         // Act/Assert
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -2172,36 +2180,100 @@ public class RenderTreeBuilderTest
     }
 
     [Fact]
-    public void TemporaryApiForCallSiteComponentRenderModeWorksEvenIfOtherParameterAddedAfter()
+    public void CanAddNamedEvent()
     {
-        // For the temporary syntax rendermode=@something (as opposed to @rendermode=@something), we can't guarantee
-        // the Razor compiler will emit the AddComponentParameter call for rendermode last. For example if there's a
-        // ChildContent it will actually emit that last. So for the temporary syntax to be usable it has to support
-        // other component parameters being added afterwards, even though that does not need to be supported for
-        // AddComponentRenderMode (since the compiler can be sure to add that after all component parameters).
-
         // Arrange
         var builder = new RenderTreeBuilder();
         var renderMode = new TestRenderMode();
 
         // Act
-        builder.OpenComponent<TestComponent>(0);
-        builder.AddComponentParameter(1, "param", 123);
-        builder.AddComponentParameter(2, "@rendermode", renderMode);
-        builder.AddComponentParameter(3, "anotherparam", 456);
-        builder.CloseComponent();
+        builder.OpenElement(0, "elem");
+        builder.AddAttribute(1, "attr", 123);
+        builder.AddNamedEvent("myeventtype", "my event name");
+        builder.CloseElement();
 
         // Assert
         Assert.Collection(
             builder.GetFrames().AsEnumerable(),
-            frame =>
-            {
-                AssertFrame.Component<TestComponent>(frame, 4, 0);
-                Assert.True(frame.ComponentFrameFlags.HasFlag(ComponentFrameFlags.HasCallerSpecifiedRenderMode));
-            },
-            frame => AssertFrame.Attribute(frame, "param", 123, 1),
-            frame => AssertFrame.Attribute(frame, "anotherparam", 456, 3),
-            frame => AssertFrame.ComponentRenderMode(frame, renderMode, 0));
+            frame => AssertFrame.Element(frame, "elem", 3, 0),
+            frame => AssertFrame.Attribute(frame, "attr", "123", 1),
+            frame => AssertFrame.NamedEvent(frame, "myeventtype", "my event name"));
+    }
+
+    [Fact]
+    public void CannotAddNamedEventToComponent()
+    {
+        // Arrange
+        var builder = new RenderTreeBuilder();
+        builder.OpenComponent<TestComponent>(0);
+
+        // Act/Assert
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+        {
+            builder.AddNamedEvent("x", "y");
+        });
+        Assert.Equal($"Named events may only be added as children of frames of type {RenderTreeFrameType.Element}", ex.Message);
+    }
+
+    [Fact]
+    public void CannotAddNamedEventWithNullEventType()
+    {
+        // Arrange
+        var builder = new RenderTreeBuilder();
+        builder.OpenElement(0, "elem");
+
+        // Act/Assert
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+        {
+            builder.AddNamedEvent(null, "assigned name");
+        });
+        Assert.Equal("eventType", ex.ParamName);
+    }
+
+    [Fact]
+    public void CannotAddNamedEventWithNullAssignedName()
+    {
+        // Arrange
+        var builder = new RenderTreeBuilder();
+        builder.OpenElement(0, "elem");
+
+        // Act/Assert
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+        {
+            builder.AddNamedEvent("eventtype", null);
+        });
+        Assert.Equal("assignedName", ex.ParamName);
+    }
+
+    [Fact]
+    public void CannotAddNamedEventWithEmptyAssignedName()
+    {
+        // Arrange
+        var builder = new RenderTreeBuilder();
+        builder.OpenElement(0, "elem");
+
+        // Act/Assert
+        var ex = Assert.Throws<ArgumentException>(() =>
+        {
+            builder.AddNamedEvent("eventtype", "");
+        });
+        Assert.Equal("assignedName", ex.ParamName);
+    }
+
+    [Fact]
+    public void CannotAddAttributesAfterNamedEvent()
+    {
+        // Arrange
+        var builder = new RenderTreeBuilder();
+        builder.OpenElement(0, "elem");
+        builder.AddNamedEvent("someevent", "somename");
+
+        // Act/Assert
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+        {
+            builder.AddAttribute(2, "a", "b");
+        });
+        Assert.Equal($"Attributes may only be added immediately after frames of type {RenderTreeFrameType.Element} or {RenderTreeFrameType.Component}", ex.Message);
     }
 
     private class TestComponent : IComponent

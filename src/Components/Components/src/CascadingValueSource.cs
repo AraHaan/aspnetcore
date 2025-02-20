@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Components.Rendering;
 
 namespace Microsoft.AspNetCore.Components;
@@ -48,20 +49,20 @@ public class CascadingValueSource<TValue> : ICascadingValueSupplier
     /// <summary>
     /// Constructs an instance of <see cref="CascadingValueSource{TValue}"/>.
     /// </summary>
-    /// <param name="valueFactory">A callback that produces the initial value when first required.</param>
+    /// <param name="initialValueFactory">A callback that produces the initial value when first required.</param>
     /// <param name="isFixed">A flag to indicate whether the value is fixed. If false, all receipients will subscribe for update notifications, which you can issue by calling <see cref="NotifyChangedAsync()"/>. These subscriptions come at a performance cost, so if the value will not change, set <paramref name="isFixed"/> to true.</param>
-    public CascadingValueSource(Func<TValue> valueFactory, bool isFixed) : this(isFixed)
+    public CascadingValueSource(Func<TValue> initialValueFactory, bool isFixed) : this(isFixed)
     {
-        _initialValueFactory = valueFactory;
+        _initialValueFactory = initialValueFactory;
     }
 
     /// <summary>
     /// Constructs an instance of <see cref="CascadingValueSource{TValue}"/>.
     /// </summary>
     /// <param name="name">A name for the cascading value. If set, <see cref="CascadingParameterAttribute"/> can be configured to match based on this name.</param>
-    /// <param name="valueFactory">A callback that produces the initial value when first required.</param>
+    /// <param name="initialValueFactory">A callback that produces the initial value when first required.</param>
     /// <param name="isFixed">A flag to indicate whether the value is fixed. If false, all receipients will subscribe for update notifications, which you can issue by calling <see cref="NotifyChangedAsync()"/>. These subscriptions come at a performance cost, so if the value will not change, set <paramref name="isFixed"/> to true.</param>
-    public CascadingValueSource(string name, Func<TValue> valueFactory, bool isFixed) : this(valueFactory, isFixed)
+    public CascadingValueSource(string name, Func<TValue> initialValueFactory, bool isFixed) : this(initialValueFactory, isFixed)
     {
         ArgumentNullException.ThrowIfNull(name);
         _name = name;
@@ -96,7 +97,16 @@ public class CascadingValueSource<TValue> : ICascadingValueSupplier
             {
                 tasks.Add(dispatcher.InvokeAsync(() =>
                 {
-                    foreach (var subscriber in subscribers)
+                    var subscribersBuffer = new ComponentStateBuffer();
+                    var subscribersCount = subscribers.Count;
+                    var subscribersCopy = subscribersCount <= ComponentStateBuffer.Capacity
+                        ? subscribersBuffer[..subscribersCount]
+                        : new ComponentState[subscribersCount];
+                    subscribers.CopyTo(subscribersCopy);
+
+                    // We iterate over a copy of the list because new subscribers might get
+                    // added or removed during change notification
+                    foreach (var subscriber in subscribersCopy)
                     {
                         subscriber.NotifyCascadingValueChanged(ParameterViewLifetime.Unbound);
                     }
@@ -173,5 +183,16 @@ public class CascadingValueSource<TValue> : ICascadingValueSupplier
                 _subscribers.Remove(dispatcher, out _);
             }
         }
+    }
+
+    [InlineArray(Capacity)]
+    internal struct ComponentStateBuffer
+    {
+        public const int Capacity = 64;
+#pragma warning disable IDE0051 // Remove unused private members
+#pragma warning disable IDE0044 // Add readonly modifier
+        private ComponentState _values;
+#pragma warning restore IDE0044 // Add readonly modifier
+#pragma warning restore IDE0051 // Remove unused private members
     }
 }

@@ -23,13 +23,13 @@ public static class ComponentsWebAssemblyApplicationBuilderExtensions
     private static readonly string? s_aspnetcoreBrowserTools = GetNonEmptyEnvironmentVariableValue("__ASPNETCORE_BROWSER_TOOLS");
 
     private static string? GetNonEmptyEnvironmentVariableValue(string name)
-        => Environment.GetEnvironmentVariable(name) is { Length: >0 } value ? value : null;
+        => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : null;
 
     /// <summary>
     /// Configures the application to serve Blazor WebAssembly framework files from the path <paramref name="pathPrefix"/>. This path must correspond to a referenced Blazor WebAssembly application project.
     /// </summary>
     /// <param name="builder">The <see cref="IApplicationBuilder"/>.</param>
-    /// <param name="pathPrefix">The <see cref="PathString"/> that indicates the prefix for the Blazor WebAssembly application.</param>
+    /// <param name="pathPrefix">The <see cref="Microsoft.AspNetCore.Http.PathString"/> that indicates the prefix for the Blazor WebAssembly application.</param>
     /// <returns>The <see cref="IApplicationBuilder"/></returns>
     public static IApplicationBuilder UseBlazorFrameworkFiles(this IApplicationBuilder builder, PathString pathPrefix)
     {
@@ -94,6 +94,7 @@ public static class ComponentsWebAssemblyApplicationBuilderExtensions
         AddMapping(contentTypeProvider, ".br", MediaTypeNames.Application.Octet);
         AddMapping(contentTypeProvider, ".dat", MediaTypeNames.Application.Octet);
         AddMapping(contentTypeProvider, ".blat", MediaTypeNames.Application.Octet);
+        AddMapping(contentTypeProvider, ".mjs", MediaTypeNames.Text.JavaScript);
 
         options.ContentTypeProvider = contentTypeProvider;
 
@@ -109,7 +110,7 @@ public static class ComponentsWebAssemblyApplicationBuilderExtensions
             var fileExtension = Path.GetExtension(requestPath.Value);
             if (string.Equals(fileExtension, ".gz") || string.Equals(fileExtension, ".br"))
             {
-                // When we are serving framework files (under _framework/ we perform content negotiation
+                // When we are serving framework files (under _framework/) we perform content negotiation
                 // on the accept encoding and replace the path with <<original>>.gz|br if we can serve gzip or brotli content
                 // respectively.
                 // Here we simply calculate the original content type by removing the extension and apply it
